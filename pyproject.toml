@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spider-sim-2d"
+version = "1.0.0"
+description = "A milestone-driven 2D procedural spider motion simulator."
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "pygame>=2.6.1,<3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0,<10.0",
+    "ruff>=0.8,<1.0",
+]
+
+[project.scripts]
+spider-sim = "spider_sim.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
