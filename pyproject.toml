@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "spider-sim-2d"
 version = "1.0.0"
 description = "A milestone-driven 2D procedural spider motion simulator."
+authors = [{name = "skkkk1028"}]
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 dependencies = [
