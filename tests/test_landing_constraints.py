@@ -357,6 +357,51 @@ class ExtendedGeometryDiagnosticTests(unittest.TestCase):
 
 
 class LandingRegionTests(unittest.TestCase):
+    def test_landing_prefers_available_bone_clearance(self) -> None:
+        config = AppConfig()
+        initial_body = _body()
+        moved_body = _body((635.0, 400.0))
+        assembly = ConstrainedGaitAssembly(
+            config.body,
+            config.leg,
+            config.foot_step,
+            config.four_phase_gait,
+            config.landing,
+            initial_body,
+        )
+
+        started = assembly.update(moved_body, 1.0 / 120.0)
+        self.assertIs(started.landing_decision, LandingDecision.ACCEPTED)
+        selected_ids = set(started.active_leg_ids)
+        landed = assembly.update(moved_body, 0.2)
+
+        self.assertIsNone(landed.active_group_index)
+        self.assertEqual(landed.bone_intersections, ())
+        self.assertFalse(
+            any(
+                violation.first_leg_id in selected_ids
+                or violation.second_leg_id in selected_ids
+                for violation in landed.bone_clearance_violations
+            )
+        )
+
+    def test_clearance_preference_does_not_block_all_landings(self) -> None:
+        config = AppConfig()
+        assembly = ConstrainedGaitAssembly(
+            config.body,
+            config.leg,
+            config.foot_step,
+            config.four_phase_gait,
+            replace(config.landing, bone_clearance=200.0),
+            _body(),
+        )
+
+        started = assembly.update(_body((635.0, 400.0)), 1.0 / 120.0)
+
+        self.assertIs(started.landing_decision, LandingDecision.ACCEPTED)
+        self.assertEqual(len(started.active_leg_ids), 2)
+        self.assertTrue(started.bone_clearance_violations)
+
     def test_selected_targets_stay_in_safe_disjoint_body_local_channels(
         self,
     ) -> None:

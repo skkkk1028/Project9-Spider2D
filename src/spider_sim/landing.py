@@ -187,6 +187,7 @@ class _CandidateEvaluation:
     selected_reasons: set[str]
     ik_result: IKResult | None = None
     support_intersections: tuple[BoneIntersection, ...] = ()
+    support_clearance_penalty: float = 0.0
     selected: bool = False
     degraded: bool = False
 
@@ -642,11 +643,22 @@ class ConstrainedGaitAssembly(FourPhaseGaitAssembly):
                         == evaluation.leg_id
                     )
                 )
+                evaluation.support_clearance_penalty = sum(
+                    self._landing_config.bone_clearance - violation.distance
+                    for violation in self._find_bone_clearance_violations(
+                        candidate_with_supports
+                    )
+                    if (
+                        violation.first_leg_id == evaluation.leg_id
+                        or violation.second_leg_id == evaluation.leg_id
+                    )
+                )
         selected_pair: tuple[
             _CandidateEvaluation,
             _CandidateEvaluation,
         ] | None = None
         selected_decision = LandingDecision.DEFERRED
+        selected_clearance_penalty = math.inf
         best_degraded_pair: tuple[
             _CandidateEvaluation,
             _CandidateEvaluation,
@@ -690,11 +702,25 @@ class ConstrainedGaitAssembly(FourPhaseGaitAssembly):
                     best_degraded_count = intersection_count
                 continue
 
-            selected_pair = first, second
-            selected_decision = LandingDecision.ACCEPTED
-            first.selected = True
-            second.selected = True
-            break
+            clearance_penalty = (
+                first.support_clearance_penalty
+                + second.support_clearance_penalty
+                + sum(
+                    self._landing_config.bone_clearance - violation.distance
+                    for violation in self._find_bone_clearance_violations(
+                        {
+                            first.leg_id: first.ik_result,
+                            second.leg_id: second.ik_result,
+                        }
+                    )
+                )
+            )
+            if clearance_penalty < selected_clearance_penalty:
+                selected_pair = first, second
+                selected_decision = LandingDecision.ACCEPTED
+                selected_clearance_penalty = clearance_penalty
+            if clearance_penalty == 0.0:
+                break
 
         if (
             selected_pair is None
@@ -705,9 +731,12 @@ class ConstrainedGaitAssembly(FourPhaseGaitAssembly):
             selected_pair = best_degraded_pair
             selected_decision = LandingDecision.DEGRADED
             for candidate in selected_pair:
-                candidate.selected = True
                 candidate.degraded = True
                 candidate.selected_reasons.add("bone_intersection")
+
+        if selected_pair is not None:
+            for candidate in selected_pair:
+                candidate.selected = True
 
         records = tuple(
             self._candidate_record(
