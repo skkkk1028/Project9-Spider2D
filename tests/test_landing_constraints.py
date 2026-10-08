@@ -357,6 +357,50 @@ class ExtendedGeometryDiagnosticTests(unittest.TestCase):
 
 
 class LandingRegionTests(unittest.TestCase):
+    def test_support_crossing_candidate_stays_rejected_after_pair_selection(
+        self,
+    ) -> None:
+        config = AppConfig()
+        body = _body((635.0, 400.0))
+        assembly = ConstrainedGaitAssembly(
+            config.body,
+            config.leg,
+            config.foot_step,
+            config.four_phase_gait,
+            config.landing,
+            _body(),
+        )
+        snapshot = assembly.update(body, 1.0 / 120.0)
+        mount = next(mount for mount in assembly.mounts if mount.leg_id == "L0")
+        candidate = next(
+            candidate
+            for candidate in snapshot.candidate_points
+            if candidate.leg_id == "L0"
+            and candidate.local_position
+            == (
+                mount.default_foot_local[0] - 10.0,
+                mount.default_foot_local[1] + 20.0,
+            )
+        )
+        preview = assembly._solve_leg_target(
+            "L0", pygame.Vector2(candidate.world_position), body
+        )
+        support = next(leg.ik for leg in snapshot.legs if leg.mount.leg_id == "L1")
+
+        self.assertIs(snapshot.landing_decision, LandingDecision.ACCEPTED)
+        self.assertTrue(
+            _segments_cross_properly(
+                pygame.Vector2(support.hip),
+                pygame.Vector2(support.knee),
+                pygame.Vector2(preview.knee),
+                pygame.Vector2(preview.foot),
+                config.landing.intersection_epsilon,
+            )
+        )
+        self.assertFalse(candidate.selected)
+        self.assertFalse(candidate.valid)
+        self.assertIn("bone_intersection", candidate.rejection_reasons)
+
     def test_landing_prefers_available_bone_clearance(self) -> None:
         config = AppConfig()
         initial_body = _body()

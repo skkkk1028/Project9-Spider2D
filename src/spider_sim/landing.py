@@ -868,6 +868,8 @@ class ConstrainedGaitAssembly(FourPhaseGaitAssembly):
         no_pair_found: bool,
     ) -> CandidatePoint:
         reasons = set(candidate.individual_reasons)
+        if candidate.support_intersections:
+            reasons.add("bone_intersection")
         if candidate.degraded:
             reasons.update(candidate.selected_reasons)
             reasons.add("explicit_degraded_intersection")
