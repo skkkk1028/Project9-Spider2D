@@ -14,7 +14,7 @@ from spider_sim.gait_renderer import (
     StaticGaitRenderer,
 )
 from spider_sim.ik import TwoBoneIKSolver
-from spider_sim.landing import ConstrainedGaitAssembly
+from spider_sim.landing import ConstrainedGaitAssembly, LandingDecision
 from spider_sim.leg import StaticLegAssembly
 from spider_sim.renderer import FrameDebugInfo
 from spider_sim.simulation import Simulation, split_delta_time
@@ -196,6 +196,8 @@ def run(
                 raw_delta_seconds,
                 config.timing,
             )
+            frame_bend_anomalies = []
+            frame_landing_violation = None
             for delta_seconds in substeps:
                 simulation.update(delta_seconds)
                 if stepping_assembly is not None:
@@ -204,10 +206,13 @@ def run(
                         delta_seconds,
                     )
                 elif constrained_assembly is not None:
-                    constrained_assembly.update(
+                    substep_snapshot = constrained_assembly.update(
                         simulation.snapshot().body,
                         delta_seconds,
                     )
+                    frame_bend_anomalies.extend(substep_snapshot.bend_anomalies)
+                    if substep_snapshot.landing_violation is not None:
+                        frame_landing_violation = substep_snapshot.landing_violation
                 elif grouped_assembly is not None:
                     grouped_assembly.update(
                         simulation.snapshot().body,
@@ -241,9 +246,21 @@ def run(
                 constrained_assembly is not None
                 and constrained_renderer is not None
             ):
+                constrained_snapshot = constrained_assembly.solve(
+                    simulation_snapshot.body
+                )
                 constrained_renderer.draw(
                     simulation_snapshot,
-                    constrained_assembly.solve(simulation_snapshot.body),
+                    replace(
+                        constrained_snapshot,
+                        bend_anomalies=tuple(frame_bend_anomalies),
+                        landing_violation=frame_landing_violation,
+                        landing_decision=(
+                            LandingDecision.DEGRADED
+                            if frame_landing_violation is not None
+                            else constrained_snapshot.landing_decision
+                        ),
+                    ),
                     frame_info,
                     debug_enabled=debug_enabled,
                 )

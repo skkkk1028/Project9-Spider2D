@@ -9,6 +9,7 @@ os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 
 import unittest
+from unittest.mock import Mock, patch
 
 import pygame
 
@@ -33,6 +34,52 @@ from spider_sim.stepping import (
 
 
 class GaitDemoSmokeTests(unittest.TestCase):
+    def test_frame_preserves_substep_events_without_replaying_them(self) -> None:
+        config = AppConfig()
+        assembly = ConstrainedGaitAssembly(
+            config.body,
+            config.leg,
+            config.foot_step,
+            config.four_phase_gait,
+            config.landing,
+            BodySnapshot((600.0, 400.0), (0.0, 0.0), 0.0),
+        )
+        rotated = BodySnapshot((600.0, 400.0), (0.0, 0.0), math.pi)
+        eventful = assembly.update(rotated, 0.2)
+        cleared = assembly.update(rotated, 1.0 / 120.0)
+        self.assertTrue(eventful.bend_anomalies)
+        self.assertIsNotNone(eventful.landing_violation)
+        self.assertEqual(cleared.bend_anomalies, ())
+        self.assertIsNone(cleared.landing_violation)
+
+        for next_frame_milliseconds in (0, 16):
+            with self.subTest(next_frame_milliseconds=next_frame_milliseconds):
+                clock = Mock()
+                clock.tick.side_effect = (16, next_frame_milliseconds)
+                clock.get_fps.return_value = 60.0
+                with (
+                    patch("spider_sim.demos.gait_demo.pygame.time.Clock", return_value=clock),
+                    patch("spider_sim.demos.gait_demo.pygame.event.get", return_value=[]),
+                    patch("spider_sim.demos.gait_demo.ConstrainedGaitAssembly") as factory,
+                    patch.object(ConstrainedGaitRenderer, "draw") as draw,
+                ):
+                    factory.return_value.update.side_effect = (
+                        eventful, cleared, cleared, cleared
+                    )
+                    factory.return_value.solve.return_value = cleared
+                    self.assertEqual(run(mode="constrained", max_frames=2), 0)
+
+                first = draw.call_args_list[0].args[1]
+                second = draw.call_args_list[1].args[1]
+                self.assertEqual(first.bend_anomalies, eventful.bend_anomalies)
+                self.assertEqual(first.landing_violation, eventful.landing_violation)
+                self.assertEqual(first.total_bend_anomalies, cleared.total_bend_anomalies)
+                self.assertEqual(
+                    first.total_landing_violations, cleared.total_landing_violations
+                )
+                self.assertEqual(second.bend_anomalies, ())
+                self.assertIsNone(second.landing_violation)
+
     def test_default_cli_runs_final_constrained_gait(self) -> None:
         result = main(["--max-frames", "2"])
 
